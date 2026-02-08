@@ -31,8 +31,26 @@ func NewManager (store *Store, workerCount int) *Manager {
 //manager starts n amount of workers
 //every worker listens to jobs channel in infinite loop and handles the incoming job
 func (m *Manager) StartWorkers(workerCount int) {
-	for i:= 0; i< workerCount; i++ {
+
+    // workerCount kadar worker başlat
+    // for i := 0; i < workerCount; i++
+	for i:=0; i <workerCount; i++{
+		//bir worker için daha bekleyeceğimiz için wg artır
 		m.WG.Add(1)
-		
+
+		//concurrent olarak bir iş daha yapılacak bunun için bir goroutine başlat
+		go func () {
+			//worker'ın işi bitince waitgroupu azaltalım
+			defer m.WG.Done()
+
+			//worker sürekli job beklemeli. job channelını dinlesin
+			for job := range m.Jobs {
+					m.Store.Update(job.ID, func (j *JobState) {
+						j.Status = JobStatusRunning
+					})
+
+			}
+		} ()
 	}
+
 }
