@@ -1,15 +1,23 @@
 package main
 
 import (
-	"net/http"
+	"math/rand"
+	"time"
 
-	"github.com/gin-gonic/gin"
+	j "github.com/eliferdentr/pulse/internal/jobs"
 )
 
 func main() {
-	r := gin.Default()
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
-	r.Run(":8080")
+	// r := gin.Default()
+	store := j.NewStore()
+	manager := j.NewManager(store, 13)
+	jr := j.JobRequest{
+		Steps:     rand.Intn(10) + 1,
+		SleepMs:   200,
+		TimeoutMs: 200,
+	}
+	manager.StartWorkers(3)
+	manager.SubmitJob(jr)
+	time.Sleep(3 * time.Second)
+
 }
