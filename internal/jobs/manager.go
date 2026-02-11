@@ -1,10 +1,11 @@
 package jobs
 
 import (
-	"fmt"
+	"context"
 	"sync"
 	"time"
 
+	"github.com/eliferdentr/pulse/internal/logger"
 	"github.com/google/uuid"
 )
 
@@ -54,22 +55,40 @@ func (m *Manager) StartWorkers(workerCount int) {
 			for job := range m.Jobs {
 				m.Store.Update(job.ID, func(j *JobState) {
 					j.Status = JobStatusRunning
-					fmt.Println("Job UUID: " + j.ID + " is RUNNING.")
+					logger.Log.Info("job started", "job_id", j.ID)
 				})
 				totalSteps := job.Request.Steps
 				sleepMs := job.Request.SleepMs
 				progress := 0
-				for step := 0; step < totalSteps; step ++ {
-					time.Sleep(time.Duration(sleepMs) * time.Millisecond)
-					progress = (step + 1) * 100 / totalSteps
-					m.Store.Update(job.ID, func (js *JobState) {
-						js.Progress = progress
+				if job.Ctx.Err() != nil {
+					continue
+				}
+				keepOnStepLooping := true
+				for step := 0; step < totalSteps && keepOnStepLooping; step++ {
+					select {
+					case <- time.After(time.Duration(sleepMs) * time.Millisecond):
+						progress = (step + 1) * 100 / totalSteps
+						m.Store.Update(job.ID, func(js *JobState) {
+							js.Progress = progress
+						})
+					case <-job.Ctx.Done():
+						m.Store.Update(job.ID, func(js *JobState) {
+							js.Status = JobStatusCancelled
+							logger.Log.Info("job cancelled", "job_id", job.ID)
+						})
+						
+						keepOnStepLooping = false
+						break
+					}
+
+				}
+				if keepOnStepLooping {
+					m.Store.Update(job.ID, func(j *JobState) {
+						j.Status = JobStatusDone
+						logger.Log.Info("job done", "job_id", j.ID)
 					})
 				}
-			m.Store.Update(job.ID, func (j *JobState) {
-				j.Status = JobStatusDone
-				fmt.Println("Job UUID: " + j.ID + " is DONE.")
-			})
+
 			}
 
 		}()
@@ -77,14 +96,36 @@ func (m *Manager) StartWorkers(workerCount int) {
 }
 
 func (m *Manager) SubmitJob(req JobRequest) string {
+	ctx, cancel := context.WithCancel(context.Background()) // http değil de background context istiyoruz, http bittikten sonra da joblar çalıştığı için
 	generatedId := uuid.New().String()
 	newState := &JobState{
-		ID: generatedId,
-		Status: JobStatusQueued,
+		ID:       generatedId,
+		Status:   JobStatusQueued,
 		Progress: 0,
-		Request: req,
-		}
+		Request:  req,
+		Ctx:  ctx,
+		Cancel: cancel,
+	}
+	logger.Log.Info("job submitted", "job_id", generatedId)
 	m.Store.Set(generatedId, newState)
 	m.Jobs <- newState
 	return generatedId
 }
+
+func  (m *Manager) CancelJob (id string) bool {
+	if id == ""{
+	 return false
+	}
+	job, ok := m.Store.Get(id)
+
+	if  !ok {
+		return false
+	}
+	
+	if job.Cancel != nil {
+		job.Cancel()
+	}
+	return true
+
+}
+

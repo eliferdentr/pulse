@@ -35,4 +35,5 @@ type JobState struct {
 	Result   *JobResult        `json:"result,omitempty"` //optional, only set when job is done
 	Cancel   context.CancelFunc `json:"-"` // Not serialized, used to cancel the job
 	Request JobRequest `json:"-"`
+	Ctx    context.Context    `json:"-"`
 }

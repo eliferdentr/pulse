@@ -1,23 +1,30 @@
 package main
 
 import (
-	"math/rand"
-	"time"
-
+	"os"
+	
+	"github.com/eliferdentr/pulse/internal/api"
 	j "github.com/eliferdentr/pulse/internal/jobs"
+	"github.com/eliferdentr/pulse/internal/logger"
 )
 
 func main() {
 	// r := gin.Default()
+	logger.Init()
 	store := j.NewStore()
 	manager := j.NewManager(store, 13)
-	jr := j.JobRequest{
-		Steps:     rand.Intn(10) + 1,
-		SleepMs:   200,
-		TimeoutMs: 200,
-	}
 	manager.StartWorkers(3)
-	manager.SubmitJob(jr)
-	time.Sleep(3 * time.Second)
+	// Router'ı oluştur
+	r := api.NewRouter(manager)
 
+	// Port ayarla (ENV > default)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// Server başlat
+	if err := r.Run(":" + port); err != nil {
+		logger.Log.Error("failed to start server", "error", err)
+	}
 }
